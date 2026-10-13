@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon silhouette of the cartridge: body with the label and stripes cut out. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FF000000" android:fillType="evenOdd"
+        android:pathData="M37,24 h34 a5,5 0 0 1 5,5 v52 a5,5 0 0 1 -5,5 h-34 a5,5 0 0 1 -5,-5 v-52 a5,5 0 0 1 5,-5 z
+            M37,50 h34 v4 h-34 z M37,58 h34 v4 h-34 z M37,66 h34 v4 h-34 z
+            M37,28.5 h34 v1.8 h-34 z M37,32.5 h34 v1.8 h-34 z M37,36.5 h34 v1.8 h-34 z" />
+</vector>

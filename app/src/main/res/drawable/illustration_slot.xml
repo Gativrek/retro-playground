@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A cartridge going into the console (first-run screen). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="168dp"
+    android:height="128dp"
+    android:viewportWidth="168"
+    android:viewportHeight="128">
+    <path android:fillColor="#FF1C1A17" android:strokeColor="#FF2E2A25" android:strokeWidth="1"
+        android:pathData="M16,78 h136 a8,8 0 0 1 8,8 v26 a8,8 0 0 1 -8,8 h-136 a8,8 0 0 1 -8,-8 v-26 a8,8 0 0 1 8,-8 z" />
+    <path android:fillColor="#FF26231F" android:pathData="M13,78 h142 a5,5 0 0 1 5,5 v5 h-152 v-5 a5,5 0 0 1 5,-5 z" />
+    <path android:fillColor="#FF2E2A25" android:pathData="M20,96 h128 v2 h-128 z M20,102 h128 v2 h-128 z M20,108 h128 v2 h-128 z" />
+    <path android:fillColor="#FF0A0908" android:pathData="M52,76 h64 a2,2 0 0 1 2,2 v2 a2,2 0 0 1 -2,2 h-64 a2,2 0 0 1 -2,-2 v-2 a2,2 0 0 1 2,-2 z" />
+    <path android:fillColor="#FF2A2622" android:pathData="M59,8 h50 a5,5 0 0 1 5,5 v54 a5,5 0 0 1 -5,5 h-50 a5,5 0 0 1 -5,-5 v-54 a5,5 0 0 1 5,-5 z" />
+    <path android:fillColor="#FF3E3832" android:pathData="M60,13 h48 v2 h-48 z M60,18 h48 v2 h-48 z M60,23 h48 v2 h-48 z" />
+    <path android:fillColor="#FFF07A3A" android:pathData="M62,30 h44 a2,2 0 0 1 2,2 v30 a2,2 0 0 1 -2,2 h-44 a2,2 0 0 1 -2,-2 v-30 a2,2 0 0 1 2,-2 z" />
+    <path android:fillColor="#801A1009" android:pathData="M66,38 h34 v3 h-34 z" />
+    <path android:fillColor="#4D1A1009" android:pathData="M66,45 h22 v3 h-22 z" />
+</vector>

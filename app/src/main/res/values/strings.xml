@@ -1,18 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Retro Playground</string>
-    <string name="subtitle">Escolha um jogo</string>
+    <string name="brand_tag">ATARI 2600</string>
+    <string name="folder_bar_label">Pasta dos jogos</string>
     <string name="open_folder">Abrir pasta</string>
     <string name="choose_folder">Escolher pasta</string>
     <string name="change_folder">Trocar pasta</string>
-    <string name="no_folder">Escolha (ou crie) uma pasta para os seus jogos, por exemplo Download/Atari, e copie os arquivos .a26 para ela.</string>
-    <string name="empty_folder">Nenhum jogo nesta pasta.\nCopie seus arquivos .a26 para ela.</string>
+    <string name="your_games">SEUS JOGOS</string>
+    <plurals name="cart_count">
+        <item quantity="one">%d cartucho</item>
+        <item quantity="other">%d cartuchos</item>
+    </plurals>
+    <string name="list_hint">Novos arquivos .a26 aparecem aqui assim que você os copia para a pasta.</string>
+    <string name="no_folder_title">Nenhuma pasta escolhida</string>
+    <string name="no_folder_subtitle">Mostre ao app onde ficam seus cartuchos.</string>
+    <string name="step_1">Crie uma pasta, por exemplo Download⁠/⁠Atari</string>
+    <string name="step_2">Copie seus arquivos .a26 para ela</string>
+    <string name="step_3">Toque em Escolher pasta e permita o acesso</string>
+    <string name="empty_folder_title">Nenhum jogo nesta pasta</string>
+    <string name="empty_folder">Copie seus arquivos .a26 para ela e volte aqui.</string>
     <string name="loading">Carregando…</string>
-    <string name="folder_label">Pasta: %1$s</string>
     <string name="folder_unavailable">Não foi possível ler a pasta. Escolha-a novamente.</string>
     <string name="no_file_manager">Nenhum gerenciador de arquivos disponível.</string>
     <string name="load_error">Não foi possível abrir o jogo: %1$s</string>
-    <string name="btn_exit">SAIR</string>
+    <string name="btn_exit">Sair do jogo</string>
     <string name="btn_select">MODO</string>
     <string name="btn_reset">INICIAR</string>
 </resources>

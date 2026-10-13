@@ -47,3 +47,8 @@ Assinatura de release: crie `keystore.properties` (ignorado pelo git) com `store
 `storePassword`, `keyAlias` e `keyPassword`.
 
 As ROMs não fazem parte deste projeto — use apenas cartuchos que você possui.
+
+## Fontes e ícone
+
+Interface desenhada no canvas "Retro Playground — UI & Icon". Fontes incluídas em `app/src/main/res/font/`,
+todas sob a SIL Open Font License 1.1: Chakra Petch (Cadson Demak) e IBM Plex Sans/Mono (IBM).

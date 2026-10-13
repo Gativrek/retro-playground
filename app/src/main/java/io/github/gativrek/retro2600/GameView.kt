@@ -7,7 +7,6 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
-import android.graphics.Typeface
 import android.util.SparseIntArray
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
@@ -21,7 +20,7 @@ import kotlin.math.roundToInt
 
 /**
  * Draws the game screen plus the touch controls on top, and turns touches into joystick input.
- * Left half of the screen = 8-way stick, right half = fire button, small buttons on top.
+ * Left half of the screen = 8-way pad, right half = fire button; console switches on top.
  */
 @SuppressLint("ViewConstructor")
 class GameView(context: Context, private val onExit: () -> Unit) : View(context) {
@@ -53,13 +52,12 @@ class GameView(context: Context, private val onExit: () -> Unit) : View(context)
     val input: Int get() = touchInput or hardwareInput
 
     private val roles = SparseIntArray()
-    private var knobX = 0f
-    private var knobY = 0f
-    private var knobActive = false
 
     // ---- layout --------------------------------------------------------------------------------
 
     private val density = resources.displayMetrics.density
+    private fun dp(v: Float) = v * density
+
     private val screenRect = RectF()
     private var padX = 0f; private var padY = 0f; private var padR = 0f
     private var fireX = 0f; private var fireY = 0f; private var fireR = 0f
@@ -67,24 +65,19 @@ class GameView(context: Context, private val onExit: () -> Unit) : View(context)
     private val selectRect = RectF()
     private val resetRect = RectF()
 
+    // ---- paints (colors from the Retro Playground design) ---------------------------------------
+
     private val pixelPaint = Paint().apply { isFilterBitmap = false }
-    private val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 2 * density
-        color = 0x66FFFFFF
-    }
-    private val fillDim = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x26FFFFFF }
-    private val fillLit = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0x88FFFFFF.toInt() }
-    private val firePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xCCD9352B.toInt() }
-    private val fireLit = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFF5A4A.toInt() }
+    private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val stroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0xCCFFFFFF.toInt()
-        textAlign = Paint.Align.CENTER
-        textSize = 13 * density
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-        letterSpacing = 0.08f
+        color = Style.TEXT
+        textSize = dp(13f)
+        typeface = Style.mono(context)
+        letterSpacing = 0.14f
     }
-    private val arrow = Path()
+    private val path = Path()
+    private val tmp = RectF()
 
     override fun onSizeChanged(width: Int, height: Int, oldw: Int, oldh: Int) {
         // 160x210 shown at 4:3, the shape of the TV picture.
@@ -98,26 +91,25 @@ class GameView(context: Context, private val onExit: () -> Unit) : View(context)
         val roomy = side >= height * 0.3f
         if (roomy) {
             // Controls live in the bars beside the picture.
-            padR = min(side * 0.4f, height * 0.25f)
-            padX = side / 2; padY = height * 0.62f
-            fireR = padR * 0.72f
+            padR = min(side * 0.41f, height * 0.17f)
+            padX = side / 2; padY = height * 0.67f
+            fireR = padR * 0.73f
             fireX = width - side / 2; fireY = padY
         } else {
             // Narrow screens (tablets): controls float over the bottom corners.
-            padR = height * 0.17f
-            padX = padR * 1.35f; padY = height - padR * 1.35f
-            fireR = padR * 0.72f
-            fireX = width - padR * 1.35f; fireY = padY
+            padR = height * 0.15f
+            padX = padR * 1.3f; padY = height - padR * 1.3f
+            fireR = padR * 0.73f
+            fireX = width - padR * 1.3f; fireY = padY
         }
 
-        val bh = 34 * density
-        val bw = if (roomy) min(side * 0.7f, 120 * density) else 96 * density
-        val top = 18 * density
-        val leftCx = if (roomy) side / 2 else bw / 2 + 16 * density
-        val rightCx = if (roomy) width - side / 2 else width - bw / 2 - 16 * density
-        exitRect.set(leftCx - bw / 2, top, leftCx + bw / 2, top + bh)
-        selectRect.set(leftCx - bw / 2, top + bh * 1.5f, leftCx + bw / 2, top + bh * 2.5f)
-        resetRect.set(rightCx - bw / 2, top, rightCx + bw / 2, top + bh)
+        val m = dp(16f)
+        val bh = dp(48f)
+        val bw = if (roomy) min(dp(130f), side - 2 * m) else dp(130f)
+        val e = dp(44f)
+        exitRect.set(m, m, m + e, m + e)
+        selectRect.set(m, m + e + dp(16f), m + bw, m + e + dp(16f) + bh)
+        resetRect.set(width - m - bw, m, width - m, m + bh)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -127,45 +119,113 @@ class GameView(context: Context, private val onExit: () -> Unit) : View(context)
         canvas.drawBitmap(bitmap, null, screenRect, pixelPaint)
 
         val inp = touchInput or hardwareInput
+        drawExit(canvas)
+        drawSwitch(canvas, selectRect, context.getString(R.string.btn_select), 0xFFC9C2B6.toInt(),
+            (inp and Atari2600.SELECT) != 0)
+        drawSwitch(canvas, resetRect, context.getString(R.string.btn_reset), Style.ACCENT,
+            (inp and Atari2600.RESET) != 0)
         drawPad(canvas, inp)
-        canvas.drawCircle(fireX, fireY, fireR, if ((inp and Atari2600.FIRE) != 0) fireLit else firePaint)
-        canvas.drawCircle(fireX, fireY, fireR, outline)
-        drawButton(canvas, exitRect, context.getString(R.string.btn_exit), false)
-        drawButton(canvas, selectRect, context.getString(R.string.btn_select), (inp and Atari2600.SELECT) != 0)
-        drawButton(canvas, resetRect, context.getString(R.string.btn_reset), (inp and Atari2600.RESET) != 0)
+        drawFire(canvas, (inp and Atari2600.FIRE) != 0)
+    }
+
+    private fun drawExit(canvas: Canvas) {
+        val r = exitRect
+        fill.color = PANEL
+        canvas.drawOval(r, fill)
+        stroke.color = Style.BORDER_STRONG; stroke.strokeWidth = dp(1f)
+        canvas.drawOval(r, stroke)
+        val c = dp(6.5f)
+        stroke.color = Style.TEXT; stroke.strokeWidth = dp(2f); stroke.strokeCap = Paint.Cap.ROUND
+        canvas.drawLine(r.centerX() - c, r.centerY() - c, r.centerX() + c, r.centerY() + c, stroke)
+        canvas.drawLine(r.centerX() + c, r.centerY() - c, r.centerX() - c, r.centerY() + c, stroke)
+    }
+
+    /** A 2600-style lever switch: the lever drops when held. */
+    private fun drawSwitch(canvas: Canvas, r: RectF, text: String, knob: Int, down: Boolean) {
+        val radius = dp(12f)
+        fill.color = if (down) PANEL_LIT else PANEL
+        canvas.drawRoundRect(r, radius, radius, fill)
+        stroke.color = Style.BORDER_STRONG; stroke.strokeWidth = dp(1f)
+        canvas.drawRoundRect(r, radius, radius, stroke)
+
+        val sx = r.left + dp(14f)
+        val sy = r.centerY() - dp(14f)
+        tmp.set(sx + dp(4f), sy + dp(1f), sx + dp(10f), sy + dp(27f))
+        fill.color = 0xFF0A0908.toInt()
+        canvas.drawRoundRect(tmp, dp(3f), dp(3f), fill)
+        canvas.drawRoundRect(tmp, dp(3f), dp(3f), stroke)
+        val ky = if (down) sy + dp(16f) else sy + dp(3f)
+        tmp.set(sx + dp(1f), ky, sx + dp(13f), ky + dp(9f))
+        fill.color = knob
+        canvas.drawRoundRect(tmp, dp(2f), dp(2f), fill)
+
+        canvas.drawText(text, sx + dp(26f), r.centerY() - (label.ascent() + label.descent()) / 2, label)
     }
 
     private fun drawPad(canvas: Canvas, inp: Int) {
-        canvas.drawCircle(padX, padY, padR, fillDim)
-        canvas.drawCircle(padX, padY, padR, outline)
-        val a = padR * 0.62f // distance of each arrow from the center
-        val s = padR * 0.2f  // arrow size
-        drawArrow(canvas, padX, padY - a, 0f, -1f, s, (inp and Atari2600.UP) != 0)
-        drawArrow(canvas, padX, padY + a, 0f, 1f, s, (inp and Atari2600.DOWN) != 0)
-        drawArrow(canvas, padX - a, padY, -1f, 0f, s, (inp and Atari2600.LEFT) != 0)
-        drawArrow(canvas, padX + a, padY, 1f, 0f, s, (inp and Atari2600.RIGHT) != 0)
-        if (knobActive) {
-            val dx = knobX - padX; val dy = knobY - padY
-            val d = hypot(dx, dy)
-            val k = if (d > padR * 0.55f) padR * 0.55f / d else 1f
-            canvas.drawCircle(padX + dx * k, padY + dy * k, padR * 0.32f, fillLit)
+        val s = padR / 66f // the pad is drawn on a 132-unit grid
+        fill.color = PANEL
+        canvas.drawCircle(padX, padY, padR, fill)
+        stroke.color = Style.BORDER_STRONG; stroke.strokeWidth = dp(1.5f)
+        canvas.drawCircle(padX, padY, padR, stroke)
+
+        // Cross plate
+        val arm = 18f * s; val reach = 52f * s; val corner = 4f * s
+        fill.color = 0xFF211F1B.toInt()
+        tmp.set(padX - arm, padY - reach, padX + arm, padY + reach)
+        canvas.drawRoundRect(tmp, corner, corner, fill)
+        tmp.set(padX - reach, padY - arm, padX + reach, padY + arm)
+        canvas.drawRoundRect(tmp, corner, corner, fill)
+        fill.color = 0xFF171612.toInt()
+        canvas.drawCircle(padX, padY, 10f * s, fill)
+
+        // Glow where the thumb is pushing
+        val dir = inp and (Atari2600.UP or Atari2600.DOWN or Atari2600.LEFT or Atari2600.RIGHT)
+        if (dir != 0) {
+            var gx = 0f; var gy = 0f
+            if ((dir and Atari2600.LEFT) != 0) gx -= 1f
+            if ((dir and Atari2600.RIGHT) != 0) gx += 1f
+            if ((dir and Atari2600.UP) != 0) gy -= 1f
+            if ((dir and Atari2600.DOWN) != 0) gy += 1f
+            val len = hypot(gx, gy)
+            fill.color = 0x2EF2EDE4
+            canvas.drawCircle(padX + gx / len * 28f * s, padY + gy / len * 28f * s, 20f * s, fill)
         }
+
+        drawArrow(canvas, 0f, -1f, s, (inp and Atari2600.UP) != 0)
+        drawArrow(canvas, 0f, 1f, s, (inp and Atari2600.DOWN) != 0)
+        drawArrow(canvas, -1f, 0f, s, (inp and Atari2600.LEFT) != 0)
+        drawArrow(canvas, 1f, 0f, s, (inp and Atari2600.RIGHT) != 0)
     }
 
-    private fun drawArrow(canvas: Canvas, cx: Float, cy: Float, dx: Float, dy: Float, s: Float, lit: Boolean) {
-        arrow.reset()
-        arrow.moveTo(cx + dx * s, cy + dy * s)
-        arrow.lineTo(cx - dx * s * 0.6f + dy * s, cy - dy * s * 0.6f + dx * s)
-        arrow.lineTo(cx - dx * s * 0.6f - dy * s, cy - dy * s * 0.6f - dx * s)
-        arrow.close()
-        canvas.drawPath(arrow, if (lit) fillLit else outline)
+    /** A filled triangle at the end of one arm, pointing outwards along (dx, dy). */
+    private fun drawArrow(canvas: Canvas, dx: Float, dy: Float, s: Float, lit: Boolean) {
+        val tipX = padX + dx * 44f * s; val tipY = padY + dy * 44f * s
+        val baseX = padX + dx * 34f * s; val baseY = padY + dy * 34f * s
+        val half = 8f * s
+        path.reset()
+        path.moveTo(tipX, tipY)
+        path.lineTo(baseX + dy * half, baseY + dx * half)
+        path.lineTo(baseX - dy * half, baseY - dx * half)
+        path.close()
+        fill.color = if (lit) Style.TEXT else 0xFF8C857A.toInt()
+        canvas.drawPath(path, fill)
     }
 
-    private fun drawButton(canvas: Canvas, r: RectF, text: String, lit: Boolean) {
-        val radius = r.height() / 2
-        canvas.drawRoundRect(r, radius, radius, if (lit) fillLit else fillDim)
-        canvas.drawRoundRect(r, radius, radius, outline)
-        canvas.drawText(text, r.centerX(), r.centerY() - (label.ascent() + label.descent()) / 2, label)
+    private fun drawFire(canvas: Canvas, down: Boolean) {
+        fill.color = if (down) 0xFFFF5A4A.toInt() else 0xFFC8302A.toInt()
+        canvas.drawCircle(fireX, fireY, fireR, fill)
+        // Lower lip so the button reads as raised; it flattens when pressed.
+        if (!down) {
+            fill.color = 0x47000000
+            tmp.set(fireX - fireR, fireY - fireR, fireX + fireR, fireY + fireR)
+            canvas.save()
+            canvas.clipRect(fireX - fireR, fireY + fireR * 0.55f, fireX + fireR, fireY + fireR)
+            canvas.drawOval(tmp, fill)
+            canvas.restore()
+        }
+        stroke.color = 0xFF3A1410.toInt(); stroke.strokeWidth = dp(3f)
+        canvas.drawCircle(fireX, fireY, fireR, stroke)
     }
 
     // ---- touch ---------------------------------------------------------------------------------
@@ -178,28 +238,19 @@ class GameView(context: Context, private val onExit: () -> Unit) : View(context)
                 val i = e.actionIndex
                 val role = roleAt(e.getX(i), e.getY(i))
                 roles.put(e.getPointerId(i), role)
-                if (role == ROLE_EXIT) {
-                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                    onExit()
-                } else if (role != ROLE_STICK) {
-                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                }
+                if (role != ROLE_STICK) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                if (role == ROLE_EXIT) onExit()
             }
             MotionEvent.ACTION_CANCEL -> roles.clear()
         }
 
         var mask = 0
-        var stick = false
         for (k in 0 until e.pointerCount) {
             val lifting = (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP) &&
                 k == e.actionIndex
             if (lifting || action == MotionEvent.ACTION_CANCEL) continue
             when (roles.get(e.getPointerId(k))) {
-                ROLE_STICK -> {
-                    stick = true
-                    knobX = e.getX(k); knobY = e.getY(k)
-                    mask = mask or direction(knobX, knobY)
-                }
+                ROLE_STICK -> mask = mask or direction(e.getX(k), e.getY(k))
                 ROLE_FIRE -> mask = mask or Atari2600.FIRE
                 ROLE_SELECT -> mask = mask or Atari2600.SELECT
                 ROLE_RESET -> mask = mask or Atari2600.RESET
@@ -208,7 +259,6 @@ class GameView(context: Context, private val onExit: () -> Unit) : View(context)
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_POINTER_UP) {
             roles.delete(e.getPointerId(e.actionIndex))
         }
-        knobActive = stick
         if (mask != touchInput) {
             touchInput = mask
             invalidate()
@@ -217,7 +267,7 @@ class GameView(context: Context, private val onExit: () -> Unit) : View(context)
     }
 
     private fun roleAt(x: Float, y: Float): Int {
-        val slop = 8 * density
+        val slop = dp(8f)
         fun hit(r: RectF) = x >= r.left - slop && x <= r.right + slop && y >= r.top - slop && y <= r.bottom + slop
         return when {
             hit(exitRect) -> ROLE_EXIT
@@ -243,6 +293,9 @@ class GameView(context: Context, private val onExit: () -> Unit) : View(context)
         private const val ROLE_SELECT = 3
         private const val ROLE_RESET = 4
         private const val ROLE_EXIT = 5
+
+        private const val PANEL = 0xFF141310.toInt()
+        private const val PANEL_LIT = 0xFF26231F.toInt()
 
         // Screen angles (y grows downwards), starting at "right" and turning clockwise.
         private val SECTORS = intArrayOf(

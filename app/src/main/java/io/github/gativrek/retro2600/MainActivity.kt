@@ -3,33 +3,44 @@ package io.github.gativrek.retro2600
 import android.app.Activity
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.RippleDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.DocumentsContract
-import android.util.TypedValue
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowInsets
-import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 
-/** Minimal game picker: one list of names and a shortcut to the games folder. */
+/** Game library: the folder bar, one cartridge card per game, and a first-run guide. */
 class MainActivity : Activity() {
 
-    private class Game(val name: String, val uri: Uri)
+    private class Game(val name: String, val fileName: String, val uri: Uri)
 
+    private lateinit var library: LinearLayout
+    private lateinit var onboarding: LinearLayout
+    private lateinit var folderPath: TextView
+    private lateinit var countLabel: TextView
     private lateinit var list: LinearLayout
-    private lateinit var message: TextView
-    private lateinit var folderLabel: TextView
-    private lateinit var openButton: Button
-    private lateinit var changeButton: Button
+    private lateinit var listHint: TextView
+    private lateinit var message: LinearLayout
+    private lateinit var messageTitle: TextView
+    private lateinit var messageText: TextView
 
     private val prefs by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
     private var folder: Uri?
@@ -46,74 +57,263 @@ class MainActivity : Activity() {
         refresh() // the user may have copied new games into the folder meanwhile
     }
 
+    // ---- layout ------------------------------------------------------------------------------
+
     private fun buildLayout(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(16), dp(20), dp(8))
+            setBackgroundColor(Style.GROUND)
         }
         root.setOnApplyWindowInsetsListener { v, insets ->
             val bars = systemBars(insets)
-            v.setPadding(dp(20) + bars[0], dp(16) + bars[1], dp(20) + bars[2], dp(8) + bars[3])
+            v.setPadding(bars[0], bars[1], bars[2], bars[3])
             insets
         }
 
-        root.addView(TextView(this).apply {
-            text = getString(R.string.app_name)
-            setTextColor(ACCENT)
-            textSize = 30f
-            typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
+        root.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(32), dp(20), dp(20))
+            addView(text(getString(R.string.brand_tag), 12f, Style.mono(context), Style.ACCENT).apply {
+                letterSpacing = 0.18f
+            })
+            addView(text(getString(R.string.app_name), 34f, Style.display(context), Style.TEXT).apply {
+                letterSpacing = -0.01f
+                setPadding(0, dp(4), 0, 0)
+            })
         })
-        root.addView(TextView(this).apply {
-            text = getString(R.string.subtitle)
-            setTextColor(TEXT_DIM)
-            textSize = 15f
-            setPadding(0, 0, 0, dp(16))
-        })
 
-        val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        openButton = pillButton(R.string.open_folder, filled = true) { openFolder() }
-        changeButton = pillButton(R.string.change_folder, filled = false) { pickFolder() }
-        buttons.addView(openButton)
-        buttons.addView(changeButton, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(10) })
-        root.addView(buttons)
-
-        folderLabel = TextView(this).apply {
-            setTextColor(TEXT_DIM)
-            textSize = 12f
-            setPadding(0, dp(8), 0, dp(12))
-        }
-        root.addView(folderLabel)
-
-        message = TextView(this).apply {
-            setTextColor(TEXT_DIM)
-            textSize = 16f
-            gravity = Gravity.CENTER
-            setPadding(dp(16), dp(48), dp(16), dp(48))
-        }
-        root.addView(message)
-
-        list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        root.addView(ScrollView(this).apply {
-            isVerticalScrollBarEnabled = false
-            addView(list)
-        }, LinearLayout.LayoutParams(-1, 0, 1f))
+        val body = FrameLayout(this)
+        library = buildLibrary()
+        onboarding = buildOnboarding()
+        body.addView(library, FrameLayout.LayoutParams(-1, -1))
+        body.addView(onboarding, FrameLayout.LayoutParams(-1, -1))
+        root.addView(body, LinearLayout.LayoutParams(-1, 0, 1f))
         return root
     }
 
-    private fun pillButton(textRes: Int, filled: Boolean, onClick: () -> Unit) = Button(this).apply {
-        text = getString(textRes)
-        isAllCaps = false
-        textSize = 15f
-        setTextColor(if (filled) BACKGROUND else TEXT)
-        background = GradientDrawable().apply {
-            cornerRadius = dp(24).toFloat()
-            if (filled) setColor(ACCENT) else setStroke(dp(1), TEXT_DIM)
+    private fun buildLibrary() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+
+        // Folder bar
+        val bar = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(12), dp(12), dp(12))
+            background = rounded(Style.SURFACE, dp(14), Style.BORDER)
         }
-        stateListAnimator = null
-        minHeight = dp(44)
-        setPadding(dp(20), 0, dp(20), 0)
+        bar.addView(icon(R.drawable.ic_folder, Style.TEXT_DIM, 22))
+        val labels = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, dp(12), 0)
+            addView(text(getString(R.string.folder_bar_label), 12f, Style.body(context), Style.TEXT_DIM))
+            folderPath = text("", 14f, Style.mono(context), Style.TEXT).apply {
+                isSingleLine = true
+                ellipsize = TextUtils.TruncateAt.MIDDLE
+            }
+            addView(folderPath)
+        }
+        bar.addView(labels, LinearLayout.LayoutParams(0, -2, 1f))
+        bar.addView(pillButton(getString(R.string.open_folder), null, 44) { openFolder() })
+        bar.addView(ImageButton(context).apply {
+            setImageResource(R.drawable.ic_swap)
+            imageTintList = ColorStateList.valueOf(Style.TEXT)
+            contentDescription = getString(R.string.change_folder)
+            background = ripple(rounded(0, dp(22), Style.BORDER_STRONG), dp(22))
+            setOnClickListener { pickFolder() }
+        }, LinearLayout.LayoutParams(dp(44), dp(44)).apply { leftMargin = dp(8) })
+        addView(bar, LinearLayout.LayoutParams(-1, -2).apply { setMargins(dp(20), 0, dp(20), 0) })
+
+        // Section header
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.BOTTOM
+            setPadding(dp(20), dp(28), dp(20), dp(10))
+            addView(text(getString(R.string.your_games), 15f, Style.displaySemi(context), Style.TEXT_DIM).apply {
+                letterSpacing = 0.08f
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            countLabel = text("", 12f, Style.mono(context), Style.TEXT_DIM)
+            addView(countLabel)
+        })
+
+        // Games (or a message in their place)
+        val frame = FrameLayout(context)
+        list = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), 0, dp(20), dp(28))
+        }
+        listHint = text(getString(R.string.list_hint), 13f, Style.body(context), Style.TEXT_DIM).apply {
+            setLineSpacing(0f, 1.3f)
+            setPadding(dp(4), dp(18), dp(4), 0)
+        }
+        frame.addView(ScrollView(context).apply {
+            isVerticalScrollBarEnabled = false
+            addView(list)
+        }, FrameLayout.LayoutParams(-1, -1))
+        message = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setPadding(dp(32), 0, dp(32), dp(48))
+            messageTitle = text("", 20f, Style.displaySemi(context), Style.TEXT).apply { gravity = Gravity.CENTER }
+            messageText = text("", 15f, Style.body(context), Style.TEXT_DIM).apply {
+                gravity = Gravity.CENTER
+                setLineSpacing(0f, 1.3f)
+                setPadding(0, dp(8), 0, 0)
+            }
+            addView(messageTitle)
+            addView(messageText)
+        }
+        frame.addView(message, FrameLayout.LayoutParams(-1, -1))
+        addView(frame, LinearLayout.LayoutParams(-1, 0, 1f))
+    }
+
+    private fun buildOnboarding() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+
+        val center = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(28), dp(8), dp(28), dp(8))
+        }
+        center.addView(ImageView(context).apply {
+            setImageResource(R.drawable.illustration_slot)
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        }, LinearLayout.LayoutParams(dp(168), dp(128)))
+        center.addView(text(getString(R.string.no_folder_title), 24f, Style.displaySemi(context), Style.TEXT).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, dp(28), 0, 0)
+        })
+        center.addView(text(getString(R.string.no_folder_subtitle), 15f, Style.body(context), Style.TEXT_DIM).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, dp(8), 0, dp(28))
+        })
+        val mono = Style.mono(context)
+        center.addView(step(1, getString(R.string.step_1), "Download⁠/⁠Atari", mono))
+        center.addView(step(2, getString(R.string.step_2), ".a26", mono))
+        center.addView(step(3, getString(R.string.step_3), getString(R.string.choose_folder), Style.bodySemi(context)))
+
+        addView(ScrollView(context).apply {
+            isFillViewport = true
+            isVerticalScrollBarEnabled = false
+            addView(FrameLayout(context).apply {
+                addView(center, FrameLayout.LayoutParams(-1, -2, Gravity.CENTER))
+            })
+        }, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        addView(pillButton(getString(R.string.choose_folder), R.drawable.ic_folder, 52) { pickFolder() },
+            LinearLayout.LayoutParams(-1, dp(52)).apply { setMargins(dp(20), dp(8), dp(20), dp(32)) })
+    }
+
+    /** A numbered first-run step; [highlight] is set in [face] (mono for paths, semibold for buttons). */
+    private fun step(number: Int, line: String, highlight: String, face: Typeface): View {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, dp(12))
+        }
+        row.addView(text(number.toString(), 13f, Style.mono(this), Style.TEXT).apply {
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Style.SURFACE_HIGH) }
+        }, LinearLayout.LayoutParams(dp(28), dp(28)))
+        val styled = SpannableString(line)
+        val at = line.indexOf(highlight)
+        if (at >= 0) styled.setSpan(FontSpan(face), at, at + highlight.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        row.addView(text("", 15f, Style.body(this), Style.TEXT).apply {
+            text = styled
+            setLineSpacing(0f, 1.25f)
+            setPadding(dp(14), dp(3), 0, 0)
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        return row
+    }
+
+    private fun gameCard(game: Game, index: Int) = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        minimumHeight = dp(76)
+        setPadding(dp(14), dp(12), dp(14), dp(12))
+        background = ripple(rounded(Style.SURFACE, dp(14), Style.BORDER), dp(14))
+        isClickable = true
+        contentDescription = game.name
+
+        addView(View(context).apply {
+            background = CartridgeDrawable(Style.LABELS[index % Style.LABELS.size])
+        }, LinearLayout.LayoutParams(dp(40), dp(48)))
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), 0, dp(12), 0)
+            addView(text(game.name, 20f, Style.displaySemi(context), Style.TEXT))
+            addView(text(game.fileName, 12f, Style.mono(context), Style.TEXT_DIM).apply {
+                isSingleLine = true
+                ellipsize = TextUtils.TruncateAt.END
+                setPadding(0, dp(2), 0, 0)
+            })
+        }, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(icon(R.drawable.ic_play, Style.TEXT, 22))
+
+        setOnClickListener {
+            startActivity(
+                Intent(this@MainActivity, GameActivity::class.java)
+                    .putExtra(GameActivity.EXTRA_URI, game.uri.toString())
+                    .putExtra(GameActivity.EXTRA_NAME, game.name)
+            )
+        }
+    }
+
+    // ---- small view helpers ------------------------------------------------------------------
+
+    private fun text(value: String, sp: Float, face: Typeface, color: Int) = TextView(this).apply {
+        text = value
+        textSize = sp
+        typeface = face
+        setTextColor(color)
+        includeFontPadding = false
+    }
+
+    private fun icon(res: Int, tint: Int, sizeDp: Int) = ImageView(this).apply {
+        setImageResource(res)
+        imageTintList = ColorStateList.valueOf(tint)
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+        layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
+    }
+
+    private fun pillButton(label: String, iconRes: Int?, heightDp: Int, onClick: () -> Unit) = TextView(this).apply {
+        text = label
+        textSize = if (heightDp >= 52) 16f else 14f
+        typeface = Style.bodySemi(context)
+        setTextColor(Style.ON_ACCENT)
+        gravity = Gravity.CENTER
+        includeFontPadding = false
+        minHeight = dp(heightDp)
+        setPadding(dp(16), 0, dp(16), 0)
+        background = ripple(rounded(Style.ACCENT, dp(heightDp / 2), 0), dp(heightDp / 2))
+        if (iconRes != null) {
+            val d = getDrawable(iconRes)!!.mutate().apply {
+                setTint(Style.ON_ACCENT)
+                setBounds(0, 0, dp(20), dp(20))
+            }
+            setCompoundDrawables(d, null, null, null)
+            compoundDrawablePadding = dp(10)
+            // Keep icon + label centered together in a full-width button.
+            addOnLayoutChangeListener { v, l, _, r, _, _, _, _, _ ->
+                val tv = v as TextView
+                val content = tv.paint.measureText(tv.text.toString()) + dp(30)
+                val side = ((r - l - content) / 2).toInt().coerceAtLeast(dp(16))
+                if (tv.paddingLeft != side) tv.setPadding(side, 0, side, 0)
+            }
+        }
+        isClickable = true
         setOnClickListener { onClick() }
     }
+
+    private fun rounded(fill: Int, radius: Int, stroke: Int) = GradientDrawable().apply {
+        cornerRadius = radius.toFloat()
+        setColor(fill)
+        if (stroke != 0) setStroke(dp(1), stroke)
+    }
+
+    private fun ripple(content: Drawable, radius: Int) = RippleDrawable(
+        ColorStateList.valueOf(0x33F2EDE4),
+        content,
+        GradientDrawable().apply { cornerRadius = radius.toFloat(); setColor(0xFFFFFFFF.toInt()) }
+    )
 
     // ---- folder ------------------------------------------------------------------------------
 
@@ -166,15 +366,11 @@ class MainActivity : Activity() {
 
     private fun refresh() {
         val tree = folder
-        openButton.text = getString(if (tree == null) R.string.choose_folder else R.string.open_folder)
-        changeButton.visibility = if (tree == null) View.GONE else View.VISIBLE
-        folderLabel.text = tree?.let { getString(R.string.folder_label, readableFolder(it)) } ?: ""
-        if (tree == null) {
-            showMessage(getString(R.string.no_folder))
-            list.removeAllViews()
-            return
-        }
-        if (list.childCount == 0) showMessage(getString(R.string.loading))
+        onboarding.visibility = if (tree == null) View.VISIBLE else View.GONE
+        library.visibility = if (tree == null) View.GONE else View.VISIBLE
+        if (tree == null) return
+        folderPath.text = readableFolder(tree)
+        if (list.childCount == 0) showMessage(getString(R.string.loading), "")
         Thread {
             val games = runCatching { listGames(tree) }.getOrNull()
             runOnUiThread { if (!isDestroyed) show(games) }
@@ -183,37 +379,27 @@ class MainActivity : Activity() {
 
     private fun show(games: List<Game>?) {
         list.removeAllViews()
+        countLabel.text = games?.let { resources.getQuantityString(R.plurals.cart_count, it.size, it.size) } ?: ""
         when {
-            games == null -> showMessage(getString(R.string.folder_unavailable))
-            games.isEmpty() -> showMessage(getString(R.string.empty_folder))
+            games == null -> showMessage("", getString(R.string.folder_unavailable))
+            games.isEmpty() -> showMessage(getString(R.string.empty_folder_title), getString(R.string.empty_folder))
             else -> {
                 message.visibility = View.GONE
-                games.forEach { list.addView(gameRow(it)) }
+                games.forEachIndexed { k, game ->
+                    list.addView(gameCard(game, k), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+                }
+                list.addView(listHint)
             }
         }
     }
 
-    private fun showMessage(text: String) {
-        message.text = text
+    private fun showMessage(title: String, text: String) {
+        list.removeAllViews()
+        messageTitle.text = title
+        messageTitle.visibility = if (title.isEmpty()) View.GONE else View.VISIBLE
+        messageText.text = text
+        messageText.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
         message.visibility = View.VISIBLE
-    }
-
-    private fun gameRow(game: Game) = TextView(this).apply {
-        text = game.name
-        setTextColor(TEXT)
-        textSize = 20f
-        setPadding(dp(4), dp(18), dp(4), dp(18))
-        val ripple = TypedValue()
-        context.theme.resolveAttribute(android.R.attr.selectableItemBackground, ripple, true)
-        setBackgroundResource(ripple.resourceId)
-        layoutParams = ViewGroup.LayoutParams(-1, -2)
-        setOnClickListener {
-            startActivity(
-                Intent(this@MainActivity, GameActivity::class.java)
-                    .putExtra(GameActivity.EXTRA_URI, game.uri.toString())
-                    .putExtra(GameActivity.EXTRA_NAME, game.name)
-            )
-        }
     }
 
     private fun listGames(tree: Uri): List<Game> {
@@ -233,7 +419,7 @@ class MainActivity : Activity() {
                 val ext = fileName.substringAfterLast('.', "").lowercase()
                 if (ext != "a26" && ext != "bin") continue
                 val uri = DocumentsContract.buildDocumentUriUsingTree(tree, c.getString(0))
-                games.add(Game(prettyName(fileName), uri))
+                games.add(Game(prettyName(fileName), fileName, uri))
             }
         } ?: throw IllegalStateException("query failed")
         return games.sortedBy { it.name.lowercase() }
@@ -264,11 +450,6 @@ class MainActivity : Activity() {
     companion object {
         private const val KEY_FOLDER = "folder"
         private const val REQUEST_FOLDER = 1
-
-        private const val BACKGROUND = 0xFF121214.toInt()
-        private const val ACCENT = 0xFFE8743B.toInt()
-        private const val TEXT = 0xFFEDEDED.toInt()
-        private const val TEXT_DIM = 0xFF8E8E94.toInt()
 
         /** "River Raid (1982) (Activision) [!].a26" -> "River Raid" */
         fun prettyName(fileName: String): String {

@@ -1,0 +1,26 @@
+# Build outputs
+build/
+app/build/
+.gradle/
+.kotlin/
+
+# Android local config
+local.properties
+
+# IDE
+.idea/
+*.iml
+
+# Signing secrets — never commit them
+*.keystore
+*.jks
+keystore.properties
+
+# ROMs are never committed
+*.a26
+*.bin
+testdata/
+
+# OS noise
+.DS_Store
+Thumbs.db

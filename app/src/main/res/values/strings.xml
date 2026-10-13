@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Retro Playground</string>
+    <string name="subtitle">Escolha um jogo</string>
+    <string name="open_folder">Abrir pasta</string>
+    <string name="choose_folder">Escolher pasta</string>
+    <string name="change_folder">Trocar pasta</string>
+    <string name="no_folder">Escolha (ou crie) uma pasta para os seus jogos, por exemplo Download/Atari, e copie os arquivos .a26 para ela.</string>
+    <string name="empty_folder">Nenhum jogo nesta pasta.\nCopie seus arquivos .a26 para ela.</string>
+    <string name="loading">Carregando…</string>
+    <string name="folder_label">Pasta: %1$s</string>
+    <string name="folder_unavailable">Não foi possível ler a pasta. Escolha-a novamente.</string>
+    <string name="no_file_manager">Nenhum gerenciador de arquivos disponível.</string>
+    <string name="load_error">Não foi possível abrir o jogo: %1$s</string>
+    <string name="btn_exit">SAIR</string>
+    <string name="btn_select">MODO</string>
+    <string name="btn_reset">INICIAR</string>
+</resources>

@@ -1,5 +1,8 @@
 package io.github.gativrek.retro2600
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
@@ -41,6 +44,68 @@ class GameView(context: Context, private val onPauseRequest: () -> Unit) : View(
             hasFrame = true
         }
         postInvalidateOnAnimation()
+    }
+
+    // ---- TV power on/off --------------------------------------------------------------------
+
+    /** 0 = TV off, 1 = picture fully on. In between, the picture opens from a bright line. */
+    private var tvLevel = 1f
+    private var tvAnimator: ValueAnimator? = null
+
+    /** Old-TV warm-up: a bright line widens, then opens into the picture. */
+    fun powerOn(delayMs: Long) = animateTv(0f, 1f, 340, delayMs, null)
+
+    /** The reverse: the picture collapses to a line, then to a dot; [done] runs at the end. */
+    fun powerOff(done: () -> Unit) = animateTv(tvLevel, 0f, 280, 0, done)
+
+    private fun animateTv(from: Float, to: Float, duration: Long, delayMs: Long, done: (() -> Unit)?) {
+        tvAnimator?.cancel()
+        tvLevel = from
+        invalidate()
+        tvAnimator = ValueAnimator.ofFloat(from, to).apply {
+            this.duration = duration
+            startDelay = delayMs
+            interpolator = null // linear; the easing is applied per phase in drawScreen
+            addUpdateListener { tvLevel = it.animatedValue as Float; invalidate() }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    tvLevel = to
+                    invalidate()
+                    done?.invoke()
+                }
+            })
+            start()
+        }
+    }
+
+    private fun easeOut(t: Float): Float { val u = 1f - t.coerceIn(0f, 1f); return 1f - u * u * u }
+
+    private fun drawScreen(canvas: Canvas) {
+        val level = tvLevel
+        if (level >= 1f) {
+            canvas.drawBitmap(bitmap, null, screenRect, pixelPaint)
+            return
+        }
+        if (level <= 0f) return
+        val cx = screenRect.centerX()
+        val cy = screenRect.centerY()
+        val line = dp(3f)
+        if (level < LINE_PHASE) {
+            // A bright scan line growing out from the middle.
+            val half = screenRect.width() / 2 * easeOut(level / LINE_PHASE)
+            fill.color = TV_GLOW
+            tmp.set(cx - half, cy - line / 2, cx + half, cy + line / 2)
+            canvas.drawRect(tmp, fill)
+        } else {
+            // The picture opens vertically, washed out at first like a cold tube.
+            val t = easeOut((level - LINE_PHASE) / (1f - LINE_PHASE))
+            val half = line / 2 + (screenRect.height() / 2 - line / 2) * t
+            tmp.set(screenRect.left, cy - half, screenRect.right, cy + half)
+            canvas.drawBitmap(bitmap, null, tmp, pixelPaint)
+            fill.color = TV_GLOW
+            fill.alpha = ((1f - t) * 0.85f * 255).toInt()
+            canvas.drawRect(tmp, fill)
+        }
     }
 
     // ---- input ---------------------------------------------------------------------------------
@@ -124,7 +189,7 @@ class GameView(context: Context, private val onPauseRequest: () -> Unit) : View(
         synchronized(lock) {
             if (hasFrame) bitmap.setPixels(pending, 0, w, 0, 0, w, h)
         }
-        canvas.drawBitmap(bitmap, null, screenRect, pixelPaint)
+        drawScreen(canvas)
 
         val inp = touchInput or hardwareInput
         drawPauseButton(canvas)
@@ -306,6 +371,10 @@ class GameView(context: Context, private val onPauseRequest: () -> Unit) : View(
         private const val ROLE_PAUSE = 5
 
         private const val PANEL = 0xFF141310.toInt()
+
+        /** Share of the power-on spent as a widening line before the picture opens. */
+        private const val LINE_PHASE = 0.35f
+        private const val TV_GLOW = 0xFFF2EDE4.toInt()
         private const val PANEL_LIT = 0xFF26231F.toInt()
 
         // Screen angles (y grows downwards), starting at "right" and turning clockwise.

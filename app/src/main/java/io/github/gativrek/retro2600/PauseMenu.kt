@@ -3,7 +3,9 @@ package io.github.gativrek.retro2600
 import android.annotation.SuppressLint
 import android.content.Context
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
+import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -24,19 +26,22 @@ class PauseMenu(
     onExit: () -> Unit,
 ) : FrameLayout(context) {
 
+    private val card: LinearLayout
     private val record: TextView
     private val save: TextView
     private val load: TextView
     private val resetSaveLabel = Runnable { save.text = context.getString(R.string.btn_save) }
 
-    val isShowing get() = visibility == View.VISIBLE
+    /** Logical state: false as soon as [hide] is called, even while the fade-out is running. */
+    var isShowing = false
+        private set
 
     init {
         setBackgroundColor(0xD90B0A09.toInt())
         isClickable = true // swallow touches
         visibility = View.GONE
 
-        val card = LinearLayout(context).apply {
+        card = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(context.dp(24), context.dp(22), context.dp(24), context.dp(24))
             background = context.rounded(Style.SURFACE, context.dp(20), Style.BORDER_STRONG)
@@ -79,19 +84,39 @@ class PauseMenu(
         }, LayoutParams(-1, -1))
     }
 
-    /** [recordText] is hidden when null; a new record is shown in the highlight color. */
-    fun show(recordText: String?, newRecord: Boolean, canLoad: Boolean) {
+    /** While fading out, the buttons can't be pressed a second time. */
+    override fun onInterceptTouchEvent(ev: MotionEvent) = !isShowing
+
+    /**
+     * Fades in over [delayMs]. [recordText] is hidden when null; a new record is shown in the
+     * highlight color.
+     */
+    fun show(recordText: String?, newRecord: Boolean, canLoad: Boolean, delayMs: Long = 0) {
         record.text = recordText ?: ""
         record.visibility = if (recordText == null) View.GONE else View.VISIBLE
         record.setTextColor(if (newRecord) Style.LABELS[1] else Style.TEXT_DIM)
         setCanLoad(canLoad)
         removeCallbacks(resetSaveLabel)
         save.text = context.getString(R.string.btn_save)
+
+        isShowing = true
+        animate().cancel()
+        card.animate().cancel()
+        alpha = 0f
+        card.scaleX = 0.94f
+        card.scaleY = 0.94f
         visibility = View.VISIBLE
+        animate().alpha(1f).setStartDelay(delayMs).setDuration(160).withEndAction(null).start()
+        card.animate().scaleX(1f).scaleY(1f).setStartDelay(delayMs).setDuration(220)
+            .setInterpolator(DecelerateInterpolator(2f)).start()
     }
 
     fun hide() {
-        visibility = View.GONE
+        if (!isShowing) return
+        isShowing = false
+        animate().cancel()
+        animate().alpha(0f).setStartDelay(0).setDuration(120)
+            .withEndAction { if (!isShowing) visibility = View.GONE }.start()
     }
 
     fun setCanLoad(canLoad: Boolean) {

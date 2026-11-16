@@ -1,6 +1,8 @@
 package io.github.gativrek.retro2600
 
+import android.animation.ValueAnimator
 import android.app.Activity
+import android.app.ActivityOptions
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.res.ColorStateList
@@ -9,6 +11,8 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import kotlin.math.PI
+import kotlin.math.sin
 import android.provider.DocumentsContract
 import android.text.SpannableString
 import android.text.Spanned
@@ -23,6 +27,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.view.animation.DecelerateInterpolator
 import android.widget.Toast
 import io.github.gativrek.retro2600.emu.Cartridge
 import io.github.gativrek.retro2600.emu.ScoreReader
@@ -43,6 +48,12 @@ class MainActivity : Activity() {
     private lateinit var messageText: TextView
 
     private val prefs by lazy { getSharedPreferences("settings", MODE_PRIVATE) }
+
+    /** Record each card showed last time (by URI), so a new best can count up when we come back. */
+    private val shownRecords = HashMap<String, Int>()
+    /** The cartridge pushed in when a game was launched; it pops back out on return. */
+    private var pushedCart: View? = null
+    private var launching = false
     private var folder: Uri?
         get() = prefs.getString(KEY_FOLDER, null)?.let(Uri::parse)
         set(value) { prefs.edit().putString(KEY_FOLDER, value?.toString()).apply() }
@@ -54,6 +65,9 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        launching = false
+        pushedCart?.animate()?.translationY(0f)?.setDuration(200)?.start()
+        pushedCart = null
         refresh() // the user may have copied new games into the folder meanwhile
     }
 
@@ -233,9 +247,10 @@ class MainActivity : Activity() {
         isClickable = true
         contentDescription = game.name
 
-        addView(View(context).apply {
+        val cart = View(context).apply {
             background = CartridgeDrawable(Style.LABELS[index % Style.LABELS.size])
-        }, LinearLayout.LayoutParams(dp(40), dp(48)))
+        }
+        addView(cart, LinearLayout.LayoutParams(dp(40), dp(48)))
         addView(LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), 0, dp(12), 0)
@@ -246,21 +261,49 @@ class MainActivity : Activity() {
                 setPadding(0, dp(2), 0, 0)
             })
             if (game.record > 0) {
-                addView(text(getString(R.string.record_card, Saves.formatScore(game.record)), 12f,
+                val key = game.uri.toString()
+                val before = shownRecords[key]
+                val line = text(getString(R.string.record_card, Saves.formatScore(before ?: game.record)), 12f,
                     Style.mono(context), Style.LABELS[1]).apply {
                     letterSpacing = 0.08f
                     setPadding(0, dp(6), 0, 0)
-                })
+                }
+                addView(line)
+                if (before != null && game.record > before) countUp(line, before, game.record)
             }
         }, LinearLayout.LayoutParams(0, -2, 1f))
         addView(icon(R.drawable.ic_play, Style.TEXT, 22))
 
         setOnClickListener {
-            startActivity(
-                Intent(this@MainActivity, GameActivity::class.java)
-                    .putExtra(GameActivity.EXTRA_URI, game.uri.toString())
-                    .putExtra(GameActivity.EXTRA_NAME, game.name)
-            )
+            if (launching) return@setOnClickListener
+            launching = true
+            // The cartridge goes into the slot, then the game fades in.
+            pushedCart = cart
+            cart.animate().translationY(dp(6).toFloat()).setDuration(120).withEndAction {
+                startActivity(
+                    Intent(this@MainActivity, GameActivity::class.java)
+                        .putExtra(GameActivity.EXTRA_URI, game.uri.toString())
+                        .putExtra(GameActivity.EXTRA_NAME, game.name),
+                    ActivityOptions.makeCustomAnimation(context, R.anim.fade_in_fast, R.anim.fade_out_fast).toBundle()
+                )
+            }.start()
+        }
+    }
+
+    /** A new best: the number rolls up from the old record with a short glow. */
+    private fun countUp(line: TextView, from: Int, to: Int) {
+        val glow = Style.LABELS[1]
+        ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 1300
+            startDelay = 350 // after the game screen has faded away
+            addUpdateListener {
+                val f = it.animatedFraction
+                val count = DecelerateInterpolator(1.5f).getInterpolation((f / 0.7f).coerceAtMost(1f))
+                line.text = getString(R.string.record_card, Saves.formatScore(from + ((to - from) * count).toInt()))
+                val radius = sin(PI * f).toFloat() * dp(8)
+                if (radius > 0.5f) line.setShadowLayer(radius, 0f, 0f, glow) else line.setShadowLayer(0f, 0f, 0f, 0)
+            }
+            start()
         }
     }
 
@@ -345,6 +388,7 @@ class MainActivity : Activity() {
                 message.visibility = View.GONE
                 games.forEachIndexed { k, game ->
                     list.addView(gameCard(game, k), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+                    shownRecords[game.uri.toString()] = game.record
                 }
                 list.addView(listHint)
             }

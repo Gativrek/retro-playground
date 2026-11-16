@@ -39,10 +39,15 @@ class GameActivity : Activity() {
     private var recordBefore = 0
     private var keyInput = 0
     private var axisInput = 0
+    private var firstMenu = true
+    private var exiting = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        if (Build.VERSION.SDK_INT >= 34) {
+            overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, R.anim.fade_in_fast, R.anim.fade_out_fast)
+        }
 
         val uri = intent.getStringExtra(EXTRA_URI)?.let(Uri::parse)
         val rom = runCatching {
@@ -85,12 +90,31 @@ class GameActivity : Activity() {
             onContinue = { resumeGame() },
             onSave = { saveSlot() },
             onLoad = { loadSlot() },
-            onExit = { finish() },
+            onExit = { exitGame() },
         )
         setContentView(FrameLayout(this).apply {
             addView(view)
             addView(menu)
         })
+        // The picture warms up like an old TV once the screen has faded in.
+        view.powerOn(TV_ON_DELAY)
+    }
+
+    override fun finish() {
+        super.finish()
+        if (Build.VERSION.SDK_INT < 34) {
+            @Suppress("DEPRECATION")
+            overridePendingTransition(R.anim.fade_in_fast, R.anim.fade_out_fast)
+        }
+    }
+
+    /** Leave the game with the TV switching off; it's saved in onPause as always. */
+    private fun exitGame() {
+        if (exiting) return
+        exiting = true
+        stopLoop()
+        menu.hide()
+        view.powerOff { finish() }
     }
 
     override fun onResume() {
@@ -113,7 +137,7 @@ class GameActivity : Activity() {
     @Deprecated("Framework Activity API; no AndroidX in this app")
     override fun onBackPressed() {
         // Back pauses; back again from the menu leaves (the game is saved either way).
-        if (menu.isShowing) finish() else pauseGame()
+        if (menu.isShowing) exitGame() else pauseGame()
     }
 
     // ---- running, pausing, saving ----------------------------------------------------------------
@@ -138,6 +162,7 @@ class GameActivity : Activity() {
     }
 
     private fun resumeGame() {
+        if (loop != null || exiting) return
         paused = false
         startLoop()
     }
@@ -148,12 +173,17 @@ class GameActivity : Activity() {
         view.hardwareInput = 0
         view.releaseTouches()
         showCurrentFrame()
+        // The loop only reads scores while running; a just-loaded game may already be ahead.
+        scoreReader?.read(console)?.let { if (it > best) best = it }
         val recordText = when {
             scoreReader == null || best <= 0 -> null
             best > recordBefore -> getString(R.string.new_record, Saves.formatScore(best))
             else -> getString(R.string.record, Saves.formatScore(best))
         }
-        menu.show(recordText, best > recordBefore, saves.slot.isFile)
+        // Opening a saved game: let the TV warm up first, then bring in the menu.
+        val delay = if (firstMenu) TV_ON_DELAY + 300 else 0
+        firstMenu = false
+        menu.show(recordText, best > recordBefore, saves.slot.isFile, delay)
     }
 
     private fun showCurrentFrame() {
@@ -266,5 +296,8 @@ class GameActivity : Activity() {
     companion object {
         const val EXTRA_URI = "uri"
         const val EXTRA_NAME = "name"
+
+        /** Lets the activity fade-in finish before the TV turns on. */
+        private const val TV_ON_DELAY = 150L
     }
 }

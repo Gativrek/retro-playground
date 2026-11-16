@@ -14,7 +14,7 @@ Emulador de Atari 2600 para Android, minimalista e em português. Feito para jog
   (um ponto salvo por jogo) e Sair do jogo.
 - **Recordes** de Enduro (odômetro), River Raid e Seaquest, lidos da memória do jogo e mostrados na lista.
 - Jogos que piscam objetos em quadros alternados são suavizados automaticamente (mistura de quadros).
-- Sem anúncios, sem internet, sem permissões. APK de release com ~50 KB.
+- Sem anúncios, sem internet, sem permissões especiais.
 
 ## Como usar
 
@@ -49,7 +49,7 @@ O ritmo vem do áudio (31,4 kHz, 2 amostras por linha), então o jogo roda na ve
 Testes opcionais:
 - `testdata/6502_functional_test.bin` (de [Klaus2m5/6502_65C02_functional_tests](https://github.com/Klaus2m5/6502_65C02_functional_tests)) ativa o teste completo da CPU.
 - Capturas de tela de cada jogo em `app/build/test-shots/` (PowerShell):
-  `$env:ROMS_DIR="D:\Downloads\Atari2600"; .\gradlew testDebugUnitTest --tests "*romScreenshots*"`
+  `$env:ROMS_DIR="C:\caminho\para\suas\roms"; .\gradlew testDebugUnitTest --tests "*romScreenshots*"`
   (guarde as ROMs fora de `app/build`, que é apagado por `gradlew clean`). Com `ROMS_DIR` definido,
   `StateTest` também confere salvar/restaurar e a leitura de recordes em cada jogo.
 
@@ -60,5 +60,5 @@ As ROMs não fazem parte deste projeto — use apenas cartuchos que você possui
 
 ## Fontes e ícone
 
-Interface desenhada no canvas "Retro Playground — UI & Icon". Fontes incluídas em `app/src/main/res/font/`,
+Fontes incluídas em `app/src/main/res/font/`,
 todas sob a SIL Open Font License 1.1: Chakra Petch (Cadson Demak) e IBM Plex Sans/Mono (IBM).

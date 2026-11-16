@@ -11,16 +11,32 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.widget.FrameLayout
 import android.widget.Toast
 import io.github.gativrek.retro2600.emu.Atari2600
 import io.github.gativrek.retro2600.emu.Cartridge
+import io.github.gativrek.retro2600.emu.FlickerFilter
+import io.github.gativrek.retro2600.emu.ScoreReader
 
-/** Full-screen game: touch controls, plus any gamepad or keyboard that happens to be connected. */
+/**
+ * Full-screen game: touch controls, plus any gamepad or keyboard that happens to be connected.
+ *
+ * Leaving the game in any way (pause menu, home button, a phone call) saves a snapshot, and the
+ * next time the game is opened it comes back paused at exactly that moment.
+ */
 class GameActivity : Activity() {
 
+    private lateinit var rom: ByteArray
+    private lateinit var saves: Saves
+    private var scoreReader: ScoreReader? = null
     private lateinit var console: Atari2600
     private lateinit var view: GameView
+    private lateinit var menu: PauseMenu
+    private val filter = FlickerFilter(Atari2600.SCREEN_WIDTH * Atari2600.SCREEN_HEIGHT)
     private var loop: EmulationLoop? = null
+    private var paused = false
+    private var best = 0
+    private var recordBefore = 0
     private var keyInput = 0
     private var axisInput = 0
 
@@ -43,23 +59,137 @@ class GameActivity : Activity() {
             finish()
             return
         }
+        this.rom = rom.getOrThrow()
         console = created.getOrThrow()
-        view = GameView(this) { finish() }
-        title = intent.getStringExtra(EXTRA_NAME)
-        setContentView(view)
+        val md5 = ScoreReader.md5(this.rom)
+        saves = Saves(this, md5)
+        scoreReader = ScoreReader.forRom(md5)
+        recordBefore = saves.record
+        best = recordBefore
+
+        // Pick up where the last session left off, paused so the player can get ready.
+        saves.read(saves.auto)?.let { data ->
+            val restored = restore(data)
+            if (restored != null) {
+                console = restored
+                paused = true
+            } else {
+                saves.auto.delete()
+            }
+        }
+
+        val name = intent.getStringExtra(EXTRA_NAME) ?: ""
+        title = name
+        view = GameView(this) { pauseGame() }
+        menu = PauseMenu(this, name,
+            onContinue = { resumeGame() },
+            onSave = { saveSlot() },
+            onLoad = { loadSlot() },
+            onExit = { finish() },
+        )
+        setContentView(FrameLayout(this).apply {
+            addView(view)
+            addView(menu)
+        })
     }
 
     override fun onResume() {
         super.onResume()
         if (isFinishing) return
         hideSystemBars()
-        loop = EmulationLoop(console, view).also { it.start() }
+        if (paused) showMenu() else startLoop()
     }
 
     override fun onPause() {
-        loop?.shutdown()
-        loop = null
+        if (::menu.isInitialized) {
+            // Coming back after an interruption always lands on the pause menu.
+            if (loop != null) paused = true
+            stopLoop()
+            persist()
+        }
         super.onPause()
+    }
+
+    @Deprecated("Framework Activity API; no AndroidX in this app")
+    override fun onBackPressed() {
+        // Back pauses; back again from the menu leaves (the game is saved either way).
+        if (menu.isShowing) finish() else pauseGame()
+    }
+
+    // ---- running, pausing, saving ----------------------------------------------------------------
+
+    private fun startLoop() {
+        menu.hide()
+        loop = EmulationLoop(console, view, filter, scoreReader, best).also { it.start() }
+    }
+
+    private fun stopLoop() {
+        val l = loop ?: return
+        l.shutdown()
+        best = maxOf(best, l.best)
+        loop = null
+    }
+
+    private fun pauseGame() {
+        if (loop == null) return
+        stopLoop()
+        paused = true
+        showMenu()
+    }
+
+    private fun resumeGame() {
+        paused = false
+        startLoop()
+    }
+
+    private fun showMenu() {
+        keyInput = 0
+        axisInput = 0
+        view.hardwareInput = 0
+        view.releaseTouches()
+        showCurrentFrame()
+        val recordText = when {
+            scoreReader == null || best <= 0 -> null
+            best > recordBefore -> getString(R.string.new_record, Saves.formatScore(best))
+            else -> getString(R.string.record, Saves.formatScore(best))
+        }
+        menu.show(recordText, best > recordBefore, saves.slot.isFile)
+    }
+
+    private fun showCurrentFrame() {
+        val screen = IntArray(Atari2600.SCREEN_WIDTH * Atari2600.SCREEN_HEIGHT)
+        console.copyScreen(screen)
+        view.publishFrame(screen)
+    }
+
+    /** A fresh console with [data] loaded, or null if the save is damaged or from another game. */
+    private fun restore(data: ByteArray): Atari2600? =
+        runCatching { Atari2600(rom).also { it.loadState(data) } }.getOrNull()
+
+    private fun persist() {
+        runCatching { saves.write(saves.auto, console.saveState()) }
+        if (best > saves.record) saves.record = best
+    }
+
+    private fun saveSlot() {
+        val ok = runCatching { saves.write(saves.slot, console.saveState()) }.isSuccess
+        if (ok) {
+            menu.flashSaved()
+            menu.setCanLoad(true)
+        } else {
+            Toast.makeText(this, R.string.save_failed, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun loadSlot() {
+        val restored = saves.read(saves.slot)?.let(::restore)
+        if (restored == null) {
+            Toast.makeText(this, R.string.load_failed, Toast.LENGTH_LONG).show()
+            return
+        }
+        console = restored
+        filter.reset()
+        resumeGame()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -86,7 +216,17 @@ class GameActivity : Activity() {
     // ---- physical controllers ------------------------------------------------------------------
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        val bit = when (event.keyCode) {
+        if (!::menu.isInitialized) return super.dispatchKeyEvent(event)
+        val code = event.keyCode
+        if (code == KeyEvent.KEYCODE_ESCAPE || code == KeyEvent.KEYCODE_BUTTON_MODE ||
+            (menu.isShowing && code == KeyEvent.KEYCODE_BUTTON_START)
+        ) {
+            if (event.action == KeyEvent.ACTION_UP) if (menu.isShowing) resumeGame() else pauseGame()
+            return true
+        }
+        // In the menu, keys move the focus and press buttons as usual.
+        if (menu.isShowing) return super.dispatchKeyEvent(event)
+        val bit = when (code) {
             KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_W -> Atari2600.UP
             KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_S -> Atari2600.DOWN
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_A -> Atari2600.LEFT
@@ -108,6 +248,7 @@ class GameActivity : Activity() {
     }
 
     override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        if (!::menu.isInitialized || menu.isShowing) return super.onGenericMotionEvent(event)
         val joystick = (event.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
         if (!joystick || event.action != MotionEvent.ACTION_MOVE) return super.onGenericMotionEvent(event)
         val x = event.getAxisValue(MotionEvent.AXIS_X) + event.getAxisValue(MotionEvent.AXIS_HAT_X)

@@ -22,8 +22,12 @@ class Atari2600(rom: ByteArray) : Bus {
 
         /** A frame never takes more than ~1.5 frames' worth of CPU time. */
         private const val MAX_CYCLES_PER_FRAME = 40_000
+
+        private const val STATE_MAGIC = 0x52323653 // "R26S"
+        private const val STATE_VERSION = 1
     }
 
+    private val romCrc = java.util.zip.CRC32().run { update(rom); value }
     val cart = Cartridge.load(rom)
     val tia = Tia()
     private val riot = Riot()
@@ -78,6 +82,38 @@ class Atari2600(rom: ByteArray) : Bus {
             else -> riot.write(a, value, cycles)
         }
     }
+
+    /**
+     * The whole machine as a compact blob. Taken between frames (after [runFrame]), it restores
+     * exactly: running the same input afterwards gives the same frames and sound.
+     */
+    fun saveState(): ByteArray {
+        val w = StateWriter()
+        w.int(STATE_MAGIC); w.int(STATE_VERSION); w.long(romCrc)
+        cpu.save(w)
+        w.ints(ram); w.long(cycles); w.int(dataBus)
+        w.int(windowTop); w.int(candidateTop); w.int(candidateFrames)
+        riot.save(w)
+        tia.save(w)
+        cart.save(w)
+        return w.finish()
+    }
+
+    /** Restores a [saveState] blob; throws (leaving the console unusable) if it's damaged or for another game. */
+    fun loadState(data: ByteArray) {
+        val r = StateReader(data)
+        require(r.int() == STATE_MAGIC && r.int() == STATE_VERSION) { "unknown save state format" }
+        require(r.long() == romCrc) { "save state belongs to another game" }
+        cpu.load(r)
+        r.ints(ram); cycles = r.long(); dataBus = r.int()
+        windowTop = r.int(); candidateTop = r.int(); candidateFrames = r.int()
+        riot.load(r)
+        tia.load(r)
+        cart.load(r)
+    }
+
+    /** One byte of console RAM ($80-$FF), by offset 0..127. */
+    fun peekRam(offset: Int) = ram[offset and 0x7F]
 
     /** Joystick, fire button and console switches, as a mask of the input bits above. */
     fun setInput(mask: Int) {

@@ -183,7 +183,7 @@ class EmulatorTest {
 
 /** An interactive ROM for checking the touch controls on a device: stick moves, fire = color + tone. */
 class DemoRomTest {
-    private fun demoRom(): ByteArray = Asm().run {
+    fun demoRom(): ByteArray = Asm().run {
         sei(); cld(); ldxI(0xFF); txs()
         ldaI(0); ldxI(0)
         label("clear"); staZpX(0); dex(); bne("clear")

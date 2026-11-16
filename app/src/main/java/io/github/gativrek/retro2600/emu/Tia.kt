@@ -87,6 +87,16 @@ internal class Player {
     var hmClocks = 8
     var moving = false
 
+    fun save(w: StateWriter) {
+        w.int(counter); w.bool(rendering); w.int(renderIdx); w.int(mode); w.int(grpNew); w.int(grpOld)
+        w.bool(vdel); w.bool(reflect); w.int(hmClocks); w.bool(moving)
+    }
+
+    fun load(r: StateReader) {
+        counter = r.int(); rendering = r.bool(); renderIdx = r.int(); mode = r.int(); grpNew = r.int(); grpOld = r.int()
+        vdel = r.bool(); reflect = r.bool(); hmClocks = r.int(); moving = r.bool()
+    }
+
     fun tick() {
         if (DECODES[mode][counter]) {
             rendering = true
@@ -128,6 +138,16 @@ internal class Missile {
     var hmClocks = 8
     var moving = false
 
+    fun save(w: StateWriter) {
+        w.int(counter); w.bool(rendering); w.int(renderIdx); w.int(mode); w.int(width)
+        w.bool(enabled); w.bool(resmp); w.int(hmClocks); w.bool(moving)
+    }
+
+    fun load(r: StateReader) {
+        counter = r.int(); rendering = r.bool(); renderIdx = r.int(); mode = r.int(); width = r.int()
+        enabled = r.bool(); resmp = r.bool(); hmClocks = r.int(); moving = r.bool()
+    }
+
     fun tick() {
         if (DECODES[mode][counter]) {
             rendering = true
@@ -163,6 +183,16 @@ internal class Ball {
     var vdel = false
     var hmClocks = 8
     var moving = false
+
+    fun save(w: StateWriter) {
+        w.int(counter); w.bool(rendering); w.int(renderIdx); w.int(width); w.bool(enaNew); w.bool(enaOld)
+        w.bool(vdel); w.int(hmClocks); w.bool(moving)
+    }
+
+    fun load(r: StateReader) {
+        counter = r.int(); rendering = r.bool(); renderIdx = r.int(); width = r.int(); enaNew = r.bool(); enaOld = r.bool()
+        vdel = r.bool(); hmClocks = r.int(); moving = r.bool()
+    }
 
     fun tick() {
         if (counter == 156) {
@@ -201,6 +231,16 @@ internal class AudioChannel {
     private var divCounter = 0
     private var pulseCounter = 0
     private var noiseCounter = 0
+
+    fun save(w: StateWriter) {
+        w.int(audc); w.int(audf); w.int(audv); w.bool(clockEnable); w.bool(noiseFeedback); w.bool(noiseCounterBit4)
+        w.bool(pulseCounterHold); w.int(divCounter); w.int(pulseCounter); w.int(noiseCounter)
+    }
+
+    fun load(r: StateReader) {
+        audc = r.int(); audf = r.int(); audv = r.int(); clockEnable = r.bool(); noiseFeedback = r.bool(); noiseCounterBit4 = r.bool()
+        pulseCounterHold = r.bool(); divCounter = r.int(); pulseCounter = r.int(); noiseCounter = r.int()
+    }
 
     fun phase0() {
         if (clockEnable) {
@@ -315,6 +355,39 @@ class Tia {
     private val dqVal = IntArray(32)
     private val dqTime = IntArray(32)
     private var dqCount = 0
+
+    // ---- save states ---------------------------------------------------------------------------
+
+    /** Everything except the input lines; includes the last frame so it can be shown right away. */
+    fun save(w: StateWriter) {
+        w.ints(frameBuffer)
+        w.long(frameCount); w.int(lastFrameLines); w.int(lastFirstVisible); w.int(firstVisible)
+        w.int(hclock); w.int(line); w.bool(wsync)
+        w.bool(latchInputs); w.bool(fire0Latched)
+        w.bool(hblank); w.bool(extHblank); w.bool(vsync); w.bool(vblank)
+        w.int(colP0); w.int(colP1); w.int(colPF); w.int(colBK)
+        w.int(ctrlpf); w.int(pf0); w.int(pf1); w.int(pf2); w.int(pfMask); w.bool(pfBit)
+        p0.save(w); p1.save(w); m0.save(w); m1.save(w); bl.save(w)
+        w.bool(movementInProgress); w.int(movementClock); w.int(collisions)
+        a0.save(w); a1.save(w)
+        w.int(dqCount); w.ints(dqReg); w.ints(dqVal); w.ints(dqTime)
+    }
+
+    fun load(r: StateReader) {
+        r.ints(frameBuffer)
+        frameCount = r.long(); lastFrameLines = r.int(); lastFirstVisible = r.int(); firstVisible = r.int()
+        hclock = r.int(); line = r.int(); wsync = r.bool()
+        latchInputs = r.bool(); fire0Latched = r.bool()
+        hblank = r.bool(); extHblank = r.bool(); vsync = r.bool(); vblank = r.bool()
+        colP0 = r.int(); colP1 = r.int(); colPF = r.int(); colBK = r.int()
+        ctrlpf = r.int(); pf0 = r.int(); pf1 = r.int(); pf2 = r.int(); pfMask = r.int(); pfBit = r.bool()
+        p0.load(r); p1.load(r); m0.load(r); m1.load(r); bl.load(r)
+        movementInProgress = r.bool(); movementClock = r.int(); collisions = r.int()
+        a0.load(r); a1.load(r)
+        dqCount = r.int(); r.ints(dqReg); r.ints(dqVal); r.ints(dqTime)
+        frameReady = false
+        audioCount = 0
+    }
 
     // ---- CPU interface ---------------------------------------------------------------------
 

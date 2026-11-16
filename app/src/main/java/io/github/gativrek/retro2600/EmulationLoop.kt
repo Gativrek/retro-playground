@@ -5,15 +5,29 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import android.os.Process
 import io.github.gativrek.retro2600.emu.Atari2600
+import io.github.gativrek.retro2600.emu.FlickerFilter
+import io.github.gativrek.retro2600.emu.ScoreReader
 
 /**
  * Runs the console on its own thread. Pacing comes from the audio device: writing each frame's
  * samples blocks until the hardware has room, which keeps the game at exactly its native speed.
  * If audio can't be opened, a clock-based sleep takes over.
+ *
+ * Along the way it smooths sprite flicker and, for games with a [ScoreReader], keeps the best score.
  */
-class EmulationLoop(private val console: Atari2600, private val view: GameView) : Thread("Atari2600") {
+class EmulationLoop(
+    private val console: Atari2600,
+    private val view: GameView,
+    private val filter: FlickerFilter,
+    private val scoreReader: ScoreReader?,
+    startingBest: Int,
+) : Thread("Atari2600") {
 
     @Volatile private var running = true
+
+    /** Highest score seen so far (starts at the stored record). */
+    @Volatile var best = startingBest
+        private set
 
     fun shutdown() {
         running = false
@@ -36,7 +50,9 @@ class EmulationLoop(private val console: Atari2600, private val view: GameView) 
                 console.setInput(view.input)
                 console.runFrame()
                 console.copyScreen(screen)
+                filter.process(screen)
                 view.publishFrame(screen)
+                scoreReader?.read(console)?.let { if (it > best) best = it }
 
                 val n = console.drainAudio(pcm)
                 if (track != null) {

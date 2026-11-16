@@ -32,6 +32,14 @@ class Cpu6502(private val bus: Bus) {
             i = (p and 0x04) != 0; z = (p and 0x02) != 0; c = (p and 0x01) != 0
         }
 
+    fun save(w: StateWriter) {
+        w.int(a); w.int(x); w.int(y); w.int(sp); w.int(pc); w.int(status); w.bool(jammed)
+    }
+
+    fun load(r: StateReader) {
+        a = r.int(); x = r.int(); y = r.int(); sp = r.int(); pc = r.int(); status = r.int(); jammed = r.bool()
+    }
+
     fun reset() {
         jammed = false
         sp = 0xFD; i = true; d = false

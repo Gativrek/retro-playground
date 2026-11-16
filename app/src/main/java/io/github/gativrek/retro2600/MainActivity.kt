@@ -5,9 +5,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.content.res.ColorStateList
 import android.graphics.Typeface
-import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.RippleDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -26,11 +24,13 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import io.github.gativrek.retro2600.emu.Cartridge
+import io.github.gativrek.retro2600.emu.ScoreReader
 
 /** Game library: the folder bar, one cartridge card per game, and a first-run guide. */
 class MainActivity : Activity() {
 
-    private class Game(val name: String, val fileName: String, val uri: Uri)
+    private class Game(val name: String, val fileName: String, val uri: Uri, val record: Int)
 
     private lateinit var library: LinearLayout
     private lateinit var onboarding: LinearLayout
@@ -245,6 +245,13 @@ class MainActivity : Activity() {
                 ellipsize = TextUtils.TruncateAt.END
                 setPadding(0, dp(2), 0, 0)
             })
+            if (game.record > 0) {
+                addView(text(getString(R.string.record_card, Saves.formatScore(game.record)), 12f,
+                    Style.mono(context), Style.LABELS[1]).apply {
+                    letterSpacing = 0.08f
+                    setPadding(0, dp(6), 0, 0)
+                })
+            }
         }, LinearLayout.LayoutParams(0, -2, 1f))
         addView(icon(R.drawable.ic_play, Style.TEXT, 22))
 
@@ -259,61 +266,12 @@ class MainActivity : Activity() {
 
     // ---- small view helpers ------------------------------------------------------------------
 
-    private fun text(value: String, sp: Float, face: Typeface, color: Int) = TextView(this).apply {
-        text = value
-        textSize = sp
-        typeface = face
-        setTextColor(color)
-        includeFontPadding = false
-    }
-
     private fun icon(res: Int, tint: Int, sizeDp: Int) = ImageView(this).apply {
         setImageResource(res)
         imageTintList = ColorStateList.valueOf(tint)
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
     }
-
-    private fun pillButton(label: String, iconRes: Int?, heightDp: Int, onClick: () -> Unit) = TextView(this).apply {
-        text = label
-        textSize = if (heightDp >= 52) 16f else 14f
-        typeface = Style.bodySemi(context)
-        setTextColor(Style.ON_ACCENT)
-        gravity = Gravity.CENTER
-        includeFontPadding = false
-        minHeight = dp(heightDp)
-        setPadding(dp(16), 0, dp(16), 0)
-        background = ripple(rounded(Style.ACCENT, dp(heightDp / 2), 0), dp(heightDp / 2))
-        if (iconRes != null) {
-            val d = getDrawable(iconRes)!!.mutate().apply {
-                setTint(Style.ON_ACCENT)
-                setBounds(0, 0, dp(20), dp(20))
-            }
-            setCompoundDrawables(d, null, null, null)
-            compoundDrawablePadding = dp(10)
-            // Keep icon + label centered together in a full-width button.
-            addOnLayoutChangeListener { v, l, _, r, _, _, _, _, _ ->
-                val tv = v as TextView
-                val content = tv.paint.measureText(tv.text.toString()) + dp(30)
-                val side = ((r - l - content) / 2).toInt().coerceAtLeast(dp(16))
-                if (tv.paddingLeft != side) tv.setPadding(side, 0, side, 0)
-            }
-        }
-        isClickable = true
-        setOnClickListener { onClick() }
-    }
-
-    private fun rounded(fill: Int, radius: Int, stroke: Int) = GradientDrawable().apply {
-        cornerRadius = radius.toFloat()
-        setColor(fill)
-        if (stroke != 0) setStroke(dp(1), stroke)
-    }
-
-    private fun ripple(content: Drawable, radius: Int) = RippleDrawable(
-        ColorStateList.valueOf(0x33F2EDE4),
-        content,
-        GradientDrawable().apply { cornerRadius = radius.toFloat(); setColor(0xFFFFFFFF.toInt()) }
-    )
 
     // ---- folder ------------------------------------------------------------------------------
 
@@ -419,11 +377,17 @@ class MainActivity : Activity() {
                 val ext = fileName.substringAfterLast('.', "").lowercase()
                 if (ext != "a26" && ext != "bin") continue
                 val uri = DocumentsContract.buildDocumentUriUsingTree(tree, c.getString(0))
-                games.add(Game(prettyName(fileName), fileName, uri))
+                games.add(Game(prettyName(fileName), fileName, uri, recordOf(uri)))
             }
         } ?: throw IllegalStateException("query failed")
         return games.sortedBy { it.name.lowercase() }
     }
+
+    /** Best score saved for this ROM (records are keyed by the ROM's MD5), or 0. */
+    private fun recordOf(uri: Uri): Int = runCatching {
+        val bytes = contentResolver.openInputStream(uri)!!.use { it.readBytes() }
+        if (bytes.size > Cartridge.MAX_SIZE) 0 else Saves.record(this, ScoreReader.md5(bytes))
+    }.getOrDefault(0)
 
     private fun readableFolder(tree: Uri): String {
         val id = DocumentsContract.getTreeDocumentId(tree)
@@ -431,8 +395,6 @@ class MainActivity : Activity() {
     }
 
     private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_LONG).show()
-
-    private fun dp(v: Int) = (v * resources.displayMetrics.density + 0.5f).toInt()
 
     /** left, top, right, bottom system bar insets. */
     private fun systemBars(insets: WindowInsets): IntArray =

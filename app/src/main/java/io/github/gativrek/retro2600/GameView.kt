@@ -20,10 +20,11 @@ import kotlin.math.roundToInt
 
 /**
  * Draws the game screen plus the touch controls on top, and turns touches into joystick input.
- * Left half of the screen = 8-way pad, right half = fire button; console switches on top.
+ * Left half of the screen = 8-way pad, right half = fire button; console switches and the pause
+ * button on top.
  */
 @SuppressLint("ViewConstructor")
-class GameView(context: Context, private val onExit: () -> Unit) : View(context) {
+class GameView(context: Context, private val onPauseRequest: () -> Unit) : View(context) {
 
     // ---- frame hand-off from the emulation thread ---------------------------------------------
 
@@ -53,6 +54,13 @@ class GameView(context: Context, private val onExit: () -> Unit) : View(context)
 
     private val roles = SparseIntArray()
 
+    /** Lets go of everything (e.g. when the pause menu covers the controls). */
+    fun releaseTouches() {
+        roles.clear()
+        touchInput = 0
+        invalidate()
+    }
+
     // ---- layout --------------------------------------------------------------------------------
 
     private val density = resources.displayMetrics.density
@@ -61,7 +69,7 @@ class GameView(context: Context, private val onExit: () -> Unit) : View(context)
     private val screenRect = RectF()
     private var padX = 0f; private var padY = 0f; private var padR = 0f
     private var fireX = 0f; private var fireY = 0f; private var fireR = 0f
-    private val exitRect = RectF()
+    private val pauseRect = RectF()
     private val selectRect = RectF()
     private val resetRect = RectF()
 
@@ -107,7 +115,7 @@ class GameView(context: Context, private val onExit: () -> Unit) : View(context)
         val bh = dp(48f)
         val bw = if (roomy) min(dp(130f), side - 2 * m) else dp(130f)
         val e = dp(44f)
-        exitRect.set(m, m, m + e, m + e)
+        pauseRect.set(m, m, m + e, m + e)
         selectRect.set(m, m + e + dp(16f), m + bw, m + e + dp(16f) + bh)
         resetRect.set(width - m - bw, m, width - m, m + bh)
     }
@@ -119,7 +127,7 @@ class GameView(context: Context, private val onExit: () -> Unit) : View(context)
         canvas.drawBitmap(bitmap, null, screenRect, pixelPaint)
 
         val inp = touchInput or hardwareInput
-        drawExit(canvas)
+        drawPauseButton(canvas)
         drawSwitch(canvas, selectRect, context.getString(R.string.btn_select), 0xFFC9C2B6.toInt(),
             (inp and Atari2600.SELECT) != 0)
         drawSwitch(canvas, resetRect, context.getString(R.string.btn_reset), Style.ACCENT,
@@ -128,16 +136,19 @@ class GameView(context: Context, private val onExit: () -> Unit) : View(context)
         drawFire(canvas, (inp and Atari2600.FIRE) != 0)
     }
 
-    private fun drawExit(canvas: Canvas) {
-        val r = exitRect
+    private fun drawPauseButton(canvas: Canvas) {
+        val r = pauseRect
         fill.color = PANEL
         canvas.drawOval(r, fill)
         stroke.color = Style.BORDER_STRONG; stroke.strokeWidth = dp(1f)
         canvas.drawOval(r, stroke)
-        val c = dp(6.5f)
-        stroke.color = Style.TEXT; stroke.strokeWidth = dp(2f); stroke.strokeCap = Paint.Cap.ROUND
-        canvas.drawLine(r.centerX() - c, r.centerY() - c, r.centerX() + c, r.centerY() + c, stroke)
-        canvas.drawLine(r.centerX() + c, r.centerY() - c, r.centerX() - c, r.centerY() + c, stroke)
+        // Two bars
+        val bw = dp(4f); val bh = dp(14f); val gap = dp(3.5f)
+        fill.color = Style.TEXT
+        tmp.set(r.centerX() - gap - bw, r.centerY() - bh / 2, r.centerX() - gap, r.centerY() + bh / 2)
+        canvas.drawRoundRect(tmp, dp(1f), dp(1f), fill)
+        tmp.set(r.centerX() + gap, r.centerY() - bh / 2, r.centerX() + gap + bw, r.centerY() + bh / 2)
+        canvas.drawRoundRect(tmp, dp(1f), dp(1f), fill)
     }
 
     /** A 2600-style lever switch: the lever drops when held. */
@@ -239,7 +250,7 @@ class GameView(context: Context, private val onExit: () -> Unit) : View(context)
                 val role = roleAt(e.getX(i), e.getY(i))
                 roles.put(e.getPointerId(i), role)
                 if (role != ROLE_STICK) performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                if (role == ROLE_EXIT) onExit()
+                if (role == ROLE_PAUSE) onPauseRequest()
             }
             MotionEvent.ACTION_CANCEL -> roles.clear()
         }
@@ -270,7 +281,7 @@ class GameView(context: Context, private val onExit: () -> Unit) : View(context)
         val slop = dp(8f)
         fun hit(r: RectF) = x >= r.left - slop && x <= r.right + slop && y >= r.top - slop && y <= r.bottom + slop
         return when {
-            hit(exitRect) -> ROLE_EXIT
+            hit(pauseRect) -> ROLE_PAUSE
             hit(selectRect) -> ROLE_SELECT
             hit(resetRect) -> ROLE_RESET
             x < width / 2f -> ROLE_STICK
@@ -292,7 +303,7 @@ class GameView(context: Context, private val onExit: () -> Unit) : View(context)
         private const val ROLE_FIRE = 2
         private const val ROLE_SELECT = 3
         private const val ROLE_RESET = 4
-        private const val ROLE_EXIT = 5
+        private const val ROLE_PAUSE = 5
 
         private const val PANEL = 0xFF141310.toInt()
         private const val PANEL_LIT = 0xFF26231F.toInt()

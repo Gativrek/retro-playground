@@ -11,6 +11,10 @@ abstract class Cartridge(protected val rom: IntArray) {
     /** Writes that land in TIA space (used by Tigervision 3F switching). */
     open fun tiaWrite(addr: Int, value: Int) {}
 
+    /** Bank-switching registers and any cartridge RAM, for save states. */
+    open fun save(w: StateWriter) {}
+    open fun load(r: StateReader) {}
+
     companion object {
         const val MAX_SIZE = 64 * 1024
 
@@ -90,6 +94,16 @@ private class Standard(rom: IntArray, name: String, private val banks: Int, priv
         if (ram != null && offset < 0x80) ram[offset] = value
     }
 
+    override fun save(w: StateWriter) {
+        w.int(bankOffset)
+        ram?.let(w::ints)
+    }
+
+    override fun load(r: StateReader) {
+        bankOffset = r.int()
+        ram?.let(r::ints)
+    }
+
     companion object {
         /** Superchip images have the RAM area (first 256 bytes of every bank) filled with one value. */
         fun hasSuperChip(rom: IntArray, banks: Int): Boolean {
@@ -119,6 +133,9 @@ private class ParkerE0(rom: IntArray) : Cartridge(rom) {
     }
 
     override fun write(addr: Int, value: Int) = checkHotspot(addr and 0xFFF)
+
+    override fun save(w: StateWriter) = w.ints(slices)
+    override fun load(r: StateReader) = r.ints(slices)
 }
 
 /** Tigervision 3F: writing to $00-$3F selects the 2K bank at $1000; the top 2K is fixed. */
@@ -135,4 +152,7 @@ private class Tigervision3F(rom: IntArray) : Cartridge(rom) {
     override fun tiaWrite(addr: Int, value: Int) {
         if (addr <= 0x3F) bankOffset = (value % banks) * 2048
     }
+
+    override fun save(w: StateWriter) = w.int(bankOffset)
+    override fun load(r: StateReader) { bankOffset = r.int() }
 }

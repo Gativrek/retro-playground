@@ -26,6 +26,16 @@ class Riot {
         timerBase = 0x80L shl shift
     }
 
+    fun save(w: StateWriter) {
+        w.int(swchaOut); w.int(swacnt); w.int(swchbOut); w.int(swbcnt)
+        w.long(timerBase); w.long(timerSetAt); w.int(shift); w.bool(flagCleared)
+    }
+
+    fun load(r: StateReader) {
+        swchaOut = r.int(); swacnt = r.int(); swchbOut = r.int(); swbcnt = r.int()
+        timerBase = r.long(); timerSetAt = r.long(); shift = r.int(); flagCleared = r.bool()
+    }
+
     private fun timer(cycles: Long) = timerBase - (cycles - timerSetAt) - 1
 
     fun read(addr: Int, cycles: Long): Int {
